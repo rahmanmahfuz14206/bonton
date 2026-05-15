@@ -1,0 +1,17 @@
+{
+  "name": "Bonton - Group File Sharing",
+  "short_name": "Bonton",
+  "description": "A group file sharing system for LAN sessions.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#3B82F6",
+  "theme_color": "#3B82F6",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3241/3241160.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
