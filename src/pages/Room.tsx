@@ -310,7 +310,7 @@ export default function Room() {
               
               <div className="text-center">
                 <h2 className="mb-1 text-2xl md:text-3xl font-black tracking-tight text-slate-900 uppercase">Broadcast</h2>
-                <p className="mb-6 text-[10px] md:text-xs font-bold uppercase tracking-widest text-slate-400">Instant Teacher-to-Student Feed</p>
+                <p className="mb-6 text-[10px] md:text-xs font-bold uppercase tracking-widest text-slate-400">Instant Group Sharing Platform </p>
                 
                 <div
                   onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
