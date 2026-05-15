@@ -13,6 +13,7 @@ import {
   X, 
   CheckCircle2, 
   AlertCircle,
+  HelpCircle,
   Link as LinkIcon,
   ChevronLeft,
   Loader2,
@@ -30,6 +31,16 @@ interface RelayFile {
   timestamp: number;
 }
 
+interface ActiveTransfer {
+  id: string;
+  name: string;
+  size: number;
+  progress: number;
+  type: 'upload' | 'download';
+}
+
+const CHUNK_SIZE = 1024 * 1024; // 1MB
+
 export default function Room() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -37,11 +48,15 @@ export default function Room() {
   
   const [socket, setSocket] = useState<Socket | null>(null);
   const [files, setFiles] = useState<RelayFile[]>([]);
+  const [activeTransfers, setActiveTransfers] = useState<ActiveTransfer[]>([]);
   const [isHostActive, setIsHostActive] = useState(false);
+  const receivedChunks = useRef<{ [key: string]: ArrayBuffer[] }>({});
   const [isDragging, setIsDragging] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [userCount, setUserCount] = useState(0);
 
   // Join link for students (Global common link)
   const joinUrl = window.location.origin;
@@ -60,7 +75,7 @@ export default function Room() {
       if (!active && !isHost) {
         toast.error("Host has ended the session.", { id: "host-status" });
       } else if (active && !isHost) {
-        toast.success("Connected with the Host", { id: "host-status" });
+        toast.success("Connected to Host's session!", { id: "host-status" });
       }
     });
 
@@ -69,6 +84,53 @@ export default function Room() {
       if (!isHost) {
         toast.success(`New file received: ${file.name}`);
       }
+    });
+
+    s.on("file-chunk-init", ({ id, name, size, type, totalChunks }: { id: string, name: string, size: number, type: string, totalChunks: number }) => {
+      if (isHost) return;
+      receivedChunks.current[id] = [];
+      setActiveTransfers(prev => [...prev, { id, name, size, progress: 0, type: 'download' }]);
+    });
+
+    s.on("file-chunk", ({ id, chunk, index, totalChunks }: { id: string, chunk: ArrayBuffer, index: number, totalChunks: number }) => {
+      if (isHost) return;
+      if (!receivedChunks.current[id]) return;
+      
+      receivedChunks.current[id][index] = chunk;
+      const receivedCount = receivedChunks.current[id].filter(Boolean).length;
+      const progress = Math.round((receivedCount / totalChunks) * 100);
+      
+      setActiveTransfers(prev => prev.map(t => t.id === id ? { ...t, progress } : t));
+    });
+
+    s.on("file-chunk-complete", (fileMeta: any) => {
+      if (isHost) return;
+      const id = fileMeta.id;
+      if (!receivedChunks.current[id]) return;
+
+      const chunks = receivedChunks.current[id];
+      const totalSize = chunks.reduce((acc: number, curr: ArrayBuffer) => acc + curr.byteLength, 0);
+      const combinedBuffer = new Uint8Array(totalSize);
+      let offset = 0;
+      for (const chunk of chunks) {
+        combinedBuffer.set(new Uint8Array(chunk), offset);
+        offset += chunk.byteLength;
+      }
+
+      const relayFile: RelayFile = {
+        ...fileMeta,
+        data: combinedBuffer.buffer,
+        timestamp: Date.now()
+      };
+
+      setFiles(prev => [relayFile, ...prev]);
+      setActiveTransfers(prev => prev.filter(t => t.id !== id));
+      toast.success(`Received: ${relayFile.name}`);
+      delete receivedChunks.current[id];
+    });
+
+    s.on("user-count", ({ count }: { count: number }) => {
+      setUserCount(count);
     });
 
     s.on("disconnect", () => {
@@ -93,26 +155,72 @@ export default function Room() {
     if (!fileList || fileList.length === 0) return;
 
     for (const f of Array.from(fileList)) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const buffer = event.target?.result as ArrayBuffer;
+      const fileId = Math.random().toString(36).substring(7);
+      const totalChunks = Math.ceil(f.size / CHUNK_SIZE);
+      
+      setActiveTransfers(prev => [...prev, { id: fileId, name: f.name, size: f.size, progress: 0, type: 'upload' }]);
+
+      const sendFile = async () => {
+        const reader = new FileReader();
+        const fullBuffer = await f.arrayBuffer();
+
+        // 1. Send Init
+        socket?.emit("file-chunk-init", { 
+          id: fileId, 
+          name: f.name, 
+          size: f.size, 
+          type: f.type, 
+          totalChunks 
+        });
+
+        // 2. Send Chunks
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(f.size, start + CHUNK_SIZE);
+          const chunk = fullBuffer.slice(start, end);
+
+          socket?.emit("file-chunk", { 
+            id: fileId, 
+            chunk, 
+            index: i, 
+            totalChunks 
+          });
+
+          // Delay slightly to not overwhelm network/socket
+          if (i % 5 === 0) {
+             await new Promise(r => setTimeout(r, 10));
+          }
+
+          setActiveTransfers(prev => prev.map(t => t.id === fileId ? { ...t, progress: Math.round(((i + 1) / totalChunks) * 100) } : t));
+        }
+
+        // 3. Send Complete
         const relayFile: RelayFile = {
-          id: Math.random().toString(36).substring(7),
+          id: fileId,
           name: f.name,
           type: f.type,
           size: f.size,
-          data: buffer,
+          data: fullBuffer,
           timestamp: Date.now(),
         };
 
-        // Emit to server
-        socket?.emit("file-relay", { file: relayFile });
-        
-        // Add to local list for visual feedback
-        setFiles((prev) => [relayFile, ...prev]);
-        toast.success(`Sent: ${f.name}`);
+        socket?.emit("file-chunk-complete", { 
+          id: fileId, 
+          name: f.name, 
+          type: f.type, 
+          size: f.size 
+        });
+
+        setFiles(prev => [relayFile, ...prev]);
+        setActiveTransfers(prev => prev.filter(t => t.id !== fileId));
+        toast.success(`Broadcasted: ${f.name}`);
       };
-      reader.readAsArrayBuffer(f);
+
+      sendFile().catch(err => {
+        console.error(err);
+        toast.error(`Failed to send ${f.name}`);
+        setActiveTransfers(prev => prev.filter(t => t.id !== fileId));
+      });
     }
   };
 
@@ -158,15 +266,15 @@ export default function Room() {
       <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
           <div 
-            className="flex h-10 w-10 md:h-14 md:w-14 items-center justify-center rounded-xl md:rounded-2xl bg-blue-500 text-white shadow-md border-2 border-slate-900"
+            className="overflow-hidden flex h-10 w-10 md:h-14 md:w-14 items-center justify-center rounded-xl md:rounded-2xl bg-white shadow-md border-2 border-slate-900 p-1"
           >
-            <Share2 className="h-5 w-5 md:h-8 md:w-8" />
+            <img src="https://cdn-icons-png.flaticon.com/512/3241/3241160.png" alt="Bonton Logo" className="h-full w-full object-contain" />
           </div>
           <div>
-            <h1 className="text-xl md:text-3xl font-black text-slate-900 tracking-tight leading-none uppercase">
+            <h1 className="text-3xl md:text-5xl font-brand text-slate-900 leading-tight">
               Bonton
             </h1>
-            <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+            <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest">
               a group file sharing system..
             </p>
           </div>
@@ -177,6 +285,21 @@ export default function Room() {
             <span className={`h-2 w-2 md:h-3 md:w-3 rounded-full ${isHostActive ? "bg-green-500 animate-pulse" : "bg-red-500"}`}></span>
             <span className="text-[10px] md:text-xs font-black uppercase tracking-wider text-slate-700">
               {isHostActive ? "Live" : "Waiting"}
+            </span>
+          </div>
+
+          <button
+            onClick={() => setShowHelpModal(true)}
+            className="flex h-9 w-9 md:h-11 md:w-11 items-center justify-center rounded-full border-2 md:border-4 border-slate-900 bg-amber-400 text-slate-900 shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] md:shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] transition-all hover:bg-amber-500 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+            title="How to use"
+          >
+            <HelpCircle className="h-5 w-5 md:h-6 md:w-6" />
+          </button>
+
+          <div className="flex items-center gap-2 rounded-full border-2 md:border-4 border-slate-900 bg-white px-3 md:px-5 py-1.5 md:py-2 shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] md:shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]">
+            <Users className="h-3 w-3 md:h-4 md:w-4 text-slate-900" />
+            <span className="text-[10px] md:text-xs font-black uppercase tracking-wider text-slate-700">
+              {userCount}
             </span>
           </div>
           
@@ -237,6 +360,39 @@ export default function Room() {
 
           <div className="min-h-[300px] md:min-h-[400px] space-y-3 md:space-y-4">
             <AnimatePresence initial={false}>
+              {/* Active Transfers */}
+              {activeTransfers.map((transfer) => (
+                <motion.div
+                  key={transfer.id}
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="relative flex flex-col gap-2 rounded-xl md:rounded-2xl border-2 md:border-4 border-slate-900 bg-slate-50 p-3 md:p-4 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500 text-white">
+                      {transfer.type === 'upload' ? <Upload className="h-4 w-4 md:h-5 md:w-5" /> : <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />}
+                    </div>
+                    <div className="flex-grow overflow-hidden">
+                      <div className="flex justify-between items-center mb-1">
+                        <h3 className="truncate text-[10px] md:text-xs font-black text-slate-800 uppercase leading-tight">
+                          {transfer.type === 'upload' ? 'Sending' : 'Receiving'}: {transfer.name}
+                        </h3>
+                        <span className="text-[8px] md:text-[10px] font-black text-blue-600">{transfer.progress}%</span>
+                      </div>
+                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden border border-slate-300">
+                        <motion.div 
+                          className="h-full bg-blue-600"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${transfer.progress}%` }}
+                          transition={{ duration: 0.3 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+
               {files.map((file, idx) => (
                 <motion.div
                   key={file.id}
@@ -273,7 +429,7 @@ export default function Room() {
                 <div className="mb-4 h-16 w-16 md:h-24 md:w-24 flex items-center justify-center rounded-full bg-slate-50 text-slate-200">
                   <File className="h-8 w-8 md:h-12 md:w-12" />
                 </div>
-                <p className="text-sm md:text-xl font-black uppercase tracking-tight text-slate-300">Quiet Classroom</p>
+                <p className="text-sm md:text-xl font-black uppercase tracking-tight text-slate-300">Quiet Session</p>
                 <p className="mt-1 text-[10px] md:text-[12px] font-bold text-slate-300 italic">Broadcasts will show here</p>
               </div>
             )}
@@ -310,7 +466,7 @@ export default function Room() {
               
               <div className="text-center">
                 <h2 className="mb-1 text-2xl md:text-3xl font-black tracking-tight text-slate-900 uppercase">Broadcast</h2>
-                <p className="mb-6 text-[10px] md:text-xs font-bold uppercase tracking-widest text-slate-400">Instant Group Sharing Platform </p>
+                <p className="mb-6 text-[10px] md:text-xs font-bold uppercase tracking-widest text-slate-400">Instant Host-to-User Feed</p>
                 
                 <div
                   onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -342,6 +498,81 @@ export default function Room() {
         )}
       </AnimatePresence>
 
+        {/* Help Modal */}
+        <AnimatePresence>
+          {showHelpModal && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowHelpModal(false)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                className="relative w-full max-w-lg rounded-3xl border-4 border-slate-900 bg-white p-6 md:p-8 shadow-[12px_12px_0px_0px_rgba(15,23,42,1)]"
+              >
+                <button
+                  onClick={() => setShowHelpModal(false)}
+                  className="absolute right-4 top-4 rounded-full border-2 border-slate-900 bg-white p-1 hover:bg-slate-50"
+                >
+                  <X className="h-4 w-4 md:h-6 md:w-6" />
+                </button>
+
+                <div className="text-center">
+                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400 border-4 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]">
+                    <HelpCircle className="h-6 w-6 text-slate-900" />
+                  </div>
+                  <h2 className="mb-2 text-2xl md:text-3xl font-black uppercase tracking-tight text-slate-900 leading-tight">How to use Bonton</h2>
+                  <p className="mb-6 text-xs font-bold uppercase tracking-widest text-slate-400 italic">Fast LAN File Share</p>
+                  
+                  <div className="space-y-4 text-left">
+                    <div className="rounded-xl border-2 border-slate-900 bg-slate-50 p-4 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]">
+                      <h3 className="mb-1 text-sm font-black uppercase text-slate-900 flex items-center gap-2 leading-none">
+                        <span className="flex h-5 w-5 items-center justify-center rounded bg-blue-500 text-[10px] text-white">1</span>
+                        Host Broadcasts
+                      </h3>
+                      <p className="text-[10px] md:text-xs font-medium text-slate-600 leading-relaxed">
+                        The Host clicks the "+" or "Upload" icon to select files. These are instantly streamed to all connected users.
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border-2 border-slate-900 bg-slate-50 p-4 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]">
+                      <h3 className="mb-1 text-sm font-black uppercase text-slate-900 flex items-center gap-2 leading-none">
+                        <span className="flex h-5 w-5 items-center justify-center rounded bg-blue-500 text-[10px] text-white">2</span>
+                        Users Receive
+                      </h3>
+                      <p className="text-[10px] md:text-xs font-medium text-slate-600 leading-relaxed">
+                        Users just join the room! Once connected, any file sent by the host will appear in their feed for download.
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border-2 border-slate-900 bg-slate-50 p-4 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]">
+                      <h3 className="mb-1 text-sm font-black uppercase text-slate-900 flex items-center gap-2 leading-none">
+                        <span className="flex h-5 w-5 items-center justify-center rounded bg-blue-500 text-[10px] text-white">3</span>
+                        LAN Powered
+                      </h3>
+                      <p className="text-[10px] md:text-xs font-medium text-slate-600 leading-relaxed">
+                        Bonton uses WebSockets over your Local Area Network. It doesn't upload to servers, making it fast and private.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setShowHelpModal(false)}
+                    className="mt-8 w-full rounded-xl border-4 border-slate-900 bg-slate-900 py-3 text-xs font-black uppercase text-white transition-all hover:bg-slate-800 active:translate-y-[2px]"
+                  >
+                    Got it!
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
       {/* QR Modal */}
       <AnimatePresence>
         {showQR && (
@@ -361,7 +592,7 @@ export default function Room() {
               
               <div className="text-center">
                 <h2 className="mb-1 text-2xl md:text-3xl font-black tracking-tight text-slate-900 uppercase">Share</h2>
-                <p className="mb-6 md:mb-8 text-[10px] font-black uppercase tracking-widest text-slate-400">Scan the QR Code to Join</p>
+                <p className="mb-6 md:mb-8 text-[10px] font-black uppercase tracking-widest text-slate-400">Users join here</p>
                 
                 <div className="mx-auto mb-6 md:mb-10 flex justify-center rounded-2xl md:rounded-3xl border-2 md:border-4 border-slate-900 bg-white p-4 md:p-8 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] md:shadow-[8px_8px_0px_0px_rgba(15,23,42,1)]">
                   <QRCodeSVG value={joinUrl} size={150} level="H" className="md:w-[200px] md:h-[200px]" />
