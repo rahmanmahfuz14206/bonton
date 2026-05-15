@@ -3,7 +3,7 @@ import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "motion/react";
-import logoImg from "../../logo.png";
+import logo from "../../logo.png";
 import { 
   Plus,
   File, 
