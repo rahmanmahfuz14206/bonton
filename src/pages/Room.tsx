@@ -361,7 +361,7 @@ export default function Room() {
               
               <div className="text-center">
                 <h2 className="mb-1 text-2xl md:text-3xl font-black tracking-tight text-slate-900 uppercase">Share</h2>
-                <p className="mb-6 md:mb-8 text-[10px] font-black uppercase tracking-widest text-slate-400">Students join here</p>
+                <p className="mb-6 md:mb-8 text-[10px] font-black uppercase tracking-widest text-slate-400">Scan the QR Code to Join</p>
                 
                 <div className="mx-auto mb-6 md:mb-10 flex justify-center rounded-2xl md:rounded-3xl border-2 md:border-4 border-slate-900 bg-white p-4 md:p-8 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] md:shadow-[8px_8px_0px_0px_rgba(15,23,42,1)]">
                   <QRCodeSVG value={joinUrl} size={150} level="H" className="md:w-[200px] md:h-[200px]" />
