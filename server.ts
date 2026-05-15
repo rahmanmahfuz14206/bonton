@@ -14,7 +14,7 @@ async function startServer() {
     },
   });
 
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Track the host of the common room
   let commonRoomHost: string | null = null;
@@ -23,9 +23,15 @@ async function startServer() {
   io.on("connection", (socket) => {
     console.log("A user connected:", socket.id);
 
+    const updateUserCount = () => {
+      const count = io.sockets.adapter.rooms.get(COMMON_ROOM_ID)?.size || 0;
+      io.to(COMMON_ROOM_ID).emit("user-count", { count });
+    };
+
     socket.on("join-room", ({ isHost }: { isHost: boolean }) => {
       socket.join(COMMON_ROOM_ID);
-      console.log(`User ${socket.id} joined as ${isHost ? 'Host' : 'Viewer'}`);
+      console.log(`User ${socket.id} joined as ${isHost ? 'Host' : 'User'}`);
+      updateUserCount();
 
       if (isHost) {
         commonRoomHost = socket.id;
@@ -45,6 +51,21 @@ async function startServer() {
       socket.to(COMMON_ROOM_ID).emit("file-received", file);
     });
 
+    socket.on("file-chunk-init", (data: any) => {
+      if (commonRoomHost !== socket.id) return;
+      socket.to(COMMON_ROOM_ID).emit("file-chunk-init", data);
+    });
+
+    socket.on("file-chunk", (data: any) => {
+      if (commonRoomHost !== socket.id) return;
+      socket.to(COMMON_ROOM_ID).emit("file-chunk", data);
+    });
+
+    socket.on("file-chunk-complete", (data: any) => {
+      if (commonRoomHost !== socket.id) return;
+      socket.to(COMMON_ROOM_ID).emit("file-chunk-complete", data);
+    });
+
     socket.on("disconnecting", () => {
       if (commonRoomHost === socket.id) {
         console.log(`Host ${socket.id} disconnected`);
@@ -55,6 +76,7 @@ async function startServer() {
 
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);
+      updateUserCount();
     });
   });
 

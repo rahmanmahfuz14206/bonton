@@ -1,6 +1,6 @@
 {
-  "name": "Bonton Group file sharing platform ",
-  "description": "A real-time, storage-free file sharing app for teamwork.",
+  "name": "Classroom AirDrop",
+  "description": "A real-time, storage-free classroom file sharing app for teachers and students.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
