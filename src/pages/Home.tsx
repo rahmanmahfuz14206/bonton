@@ -26,7 +26,7 @@ export default function Home() {
       >
         <div className="mb-6 flex justify-center">
           <div className="overflow-hidden rounded-2xl bg-white p-1 shadow-md border-2 border-slate-900">
-            <img src="icon" alt="Bonton Logo" className="h-16 w-16 md:h-20 md:w-20 object-contain" />
+            <img src=icon alt="Bonton Logo" className="h-16 w-16 md:h-20 md:w-20 object-contain" />
           </div>
         </div>
         
