@@ -24,16 +24,16 @@ export default function Home() {
         className="w-full max-w-md rounded-[32px] border-4 border-slate-900 bg-white p-8 shadow-[12px_12px_0px_0px_rgba(15,23,42,1)]"
       >
         <div className="mb-6 flex justify-center">
-          <div className="rounded-2xl bg-blue-500 p-4 shadow-md border-2 border-slate-900">
-            <Share2 className="h-10 w-10 text-white" />
+          <div className="overflow-hidden rounded-2xl bg-white p-1 shadow-md border-2 border-slate-900">
+            <img src="logo.png" alt="Bonton Logo" className="h-16 w-16 md:h-20 md:w-20 object-contain" />
           </div>
         </div>
         
-        <h1 className="mb-1 text-4xl font-black tracking-tight text-slate-900 md:text-5xl uppercase">
-          ClassStream
+        <h1 className="mb-2 text-5xl font-brand text-slate-900 md:text-7xl text-center">
+          Bonton
         </h1>
         <p className="mb-8 text-sm font-bold uppercase tracking-[0.2em] text-slate-500">
-          LAN File Transfer System
+          LAN File Share
         </p>
 
         <div className="space-y-4">
@@ -48,7 +48,7 @@ export default function Home() {
             onClick={handleJoin}
             className="group w-full rounded-2xl bg-white py-4 text-lg font-black uppercase text-slate-900 shadow-md border-4 border-slate-900 transition-all hover:bg-slate-50 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]"
           >
-            Scan the QR Code to Enter the room
+            Join as User
           </button>
         </div>
 
