@@ -48,7 +48,7 @@ export default function Home() {
             onClick={handleJoin}
             className="group w-full rounded-2xl bg-white py-4 text-lg font-black uppercase text-slate-900 shadow-md border-4 border-slate-900 transition-all hover:bg-slate-50 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]"
           >
-            Join as Student
+            Scan the QR Code to Enter the room
           </button>
         </div>
 
