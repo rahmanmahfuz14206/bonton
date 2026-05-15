@@ -58,9 +58,9 @@ export default function Room() {
     s.on("host-status", ({ active }: { active: boolean }) => {
       setIsHostActive(active);
       if (!active && !isHost) {
-        toast.error("Teacher has ended the session.", { id: "host-status" });
+        toast.error("Host has ended the session.", { id: "host-status" });
       } else if (active && !isHost) {
-        toast.success("Connected to Teacher's session!", { id: "host-status" });
+        toast.success("Connected with the Host", { id: "host-status" });
       }
     });
 
