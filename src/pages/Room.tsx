@@ -268,7 +268,7 @@ export default function Room() {
           <div 
             className="overflow-hidden flex h-10 w-10 md:h-14 md:w-14 items-center justify-center rounded-xl md:rounded-2xl bg-white shadow-md border-2 border-slate-900 p-1"
           >
-            <img src="https://cdn-icons-png.flaticon.com/512/3241/3241160.png" alt="Bonton Logo" className="h-full w-full object-contain" />
+            <img src="logo.png" alt="Bonton Logo" className="h-full w-full object-contain" />
           </div>
           <div>
             <h1 className="text-3xl md:text-5xl font-brand text-slate-900 leading-tight">
