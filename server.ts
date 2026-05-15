@@ -25,7 +25,7 @@ async function startServer() {
 
     socket.on("join-room", ({ isHost }: { isHost: boolean }) => {
       socket.join(COMMON_ROOM_ID);
-      console.log(`User ${socket.id} joined as ${isHost ? 'Host' : 'Student'}`);
+      console.log(`User ${socket.id} joined as ${isHost ? 'Host' : 'Viewer'}`);
 
       if (isHost) {
         commonRoomHost = socket.id;
